@@ -330,7 +330,7 @@ def train():
     training_args.ddp_find_unused_parameters = False
     set_seed(42)
 
-    model_config = CamelidaeConfig.from_pretrained(model_args.model_name_or_path)
+    model_config = Qwen2idaeConfig.from_pretrained(model_args.model_name_or_path)
     model_config.pretraining_tp = 1  ## without tensor parallelism rank
 
     # Camelidae Config
