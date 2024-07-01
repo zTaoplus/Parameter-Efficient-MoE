@@ -7,7 +7,6 @@
   <img src="https://img.shields.io/badge/🤗-Huggingface%20Repo-green.svg">
 </a>
 
-<img src="./img/Figure1.png">
 
 ## News
 - 3/12/2024 - We released Qwen2idae-16x14B-v1.0 on 🤗 [HuggingFace](https://huggingface.co/hywu/Qwen2idae-16x14B-v1.0), which has strong performance in Math and Code with 15B activated params.
