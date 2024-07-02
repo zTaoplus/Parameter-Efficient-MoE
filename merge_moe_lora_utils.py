@@ -1,28 +1,28 @@
+import os
 import transformers
+from peft import PeftModel
+
+import torch
+
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from transformers_utils import get_keys_to_not_convert
 import transformers.utils.bitsandbytes
 import transformers.modeling_utils
+import commons
 
 transformers.utils.bitsandbytes.get_keys_to_not_convert = get_keys_to_not_convert
-
-from peft import PeftModel
-
-import torch
 
 
 def merge_lora_to_base_model(
     modeling_cls,
     config_cls,
     pretrained_model_path,
-    peft_path,
-    moe_path,
-    merge_path,
+    output_dir,
+    ckpt_path,
     extra_args,
 ):
-
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         pretrained_model_path, use_fast=False, trust_remote_code=True
     )
@@ -51,7 +51,8 @@ def merge_lora_to_base_model(
         device_map={"": "cpu"},
     )
 
-    moe_weights = torch.load(moe_path, map_location=torch.device("cpu"))
+    moe_model_path = os.path.join(ckpt_path, commons.MOE_MODEL_NAME)
+    moe_weights = torch.load(moe_model_path, map_location=torch.device("cpu"))
     weights_dict = {}
     for k, v in moe_weights.items():
         new_k = k.replace("base_model.model.", "") if "base_model.model." in k else k
@@ -59,32 +60,29 @@ def merge_lora_to_base_model(
 
     model.load_state_dict(weights_dict, strict=False)
 
+    peft_ckpt_path = os.path.join(ckpt_path, commons.PEFT_MODEL_DIR_NAME)
     model = PeftModel.from_pretrained(
-        model, peft_path, torch_dtype=torch.bfloat16, device_map={"": "cpu"}
+        model, peft_ckpt_path, torch_dtype=torch.bfloat16, device_map={"": "cpu"}
     )
 
     model = model.merge_and_unload()
 
-    tokenizer.save_pretrained(merge_path)
-    
-    model.save_pretrained(merge_path)
-    
+    merged_path = os.path.join(output_dir, commons.MERGERD_MODEL_DIR_NAME)
+    tokenizer.save_pretrained(merged_path)
+
+    model.save_pretrained(merged_path)
+
     # we also cp config and modeling files to merged path
     import shutil
-    shutil.copy(
-        modeling_cls.__file__, merge_path
-    )
 
-    shutil.copy(
-        config_cls.__file__, merge_path
-    )
-    
+    shutil.copy(modeling_cls.__file__, merged_path)
+
+    shutil.copy(config_cls.__file__, merged_path)
 
 
-def test_loading(merged_path):
-
+def test_loading(output_dir):
     print("try to load model from merged path and generate by prompt")
-
+    merged_path = os.path.join(output_dir, commons.MERGERD_MODEL_DIR_NAME)
     tokenizer = AutoTokenizer.from_pretrained(merged_path)
     model = AutoModelForCausalLM.from_pretrained(
         merged_path, device_map="auto", trust_remote_code=True

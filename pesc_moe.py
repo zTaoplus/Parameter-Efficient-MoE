@@ -17,6 +17,7 @@ import importlib
 import logging
 import math
 import os
+
 import warnings
 from dataclasses import dataclass, field
 from os.path import join
@@ -35,6 +36,7 @@ from transformers import BitsAndBytesConfig, Trainer, set_seed
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 import utils
+import commons
 from merge_moe_lora_utils import merge_lora_to_base_model, test_loading
 from transformers_utils import (
     # _load_pretrained_model,
@@ -112,7 +114,10 @@ class ExtraArguments:
     test: bool = field(
         default=False, metadata={"help": "test merged moe model loading and generating"}
     )
-    do_eval: bool = field(default=False, metadata={"help": "do eval by lm eval repo"})
+    ckpt_path: str = field(
+        default="",
+        metadata={"help": "trained ckpt path"},
+    )
 
 
 def _tokenize_fn(
@@ -274,8 +279,11 @@ class SavePeftModelCallback(transformers.TrainerCallback):
             checkpoint_folder = os.path.join(
                 args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
             )
+            # UPDATE the best model checkpoint to get
 
-        peft_model_path = os.path.join(checkpoint_folder, "adapter_model")
+            state.best_model_checkpoint = checkpoint_folder
+
+        peft_model_path = os.path.join(checkpoint_folder, commons.PEFT_MODEL_DIR_NAME)
         model = kwargs["model"]
         model.save_pretrained(peft_model_path)
 
@@ -285,7 +293,7 @@ class SavePeftModelCallback(transformers.TrainerCallback):
                 moe_state.update({param_tensor: model.state_dict()[param_tensor]})
             # if "adapter" in param_tensor or "norm" in param_tensor:
             #     moe_state.update({param_tensor: model.state_dict()[param_tensor]})
-        moe_model_path = os.path.join(checkpoint_folder, "moe_model.bin")
+        moe_model_path = os.path.join(checkpoint_folder, commons.MOE_MODEL_NAME)
         # print(moe_state.keys())
         torch.save(moe_state, moe_model_path)
 
@@ -390,12 +398,19 @@ def train():
     modeling_module, modeling = extra_args.modeling_class.rsplit(".", maxsplit=1)
 
     modeling_cls = getattr(importlib.import_module(modeling_module), modeling)
-    if not training_args.skip_train:
+    if training_args.skip_train:
+        if not extra_args.ckpt_path:
+            raise RuntimeError(
+                "when `--skip_train`,you must given `--ckpt_path <ckpt path>`"
+            )
+
+        ckpt_path = extra_args.ckpt_path
+    else:
         model = modeling_cls.from_pretrained(
             model_args.model_name_or_path,
             config=model_config,
             cache_dir=training_args.cache_dir,
-            load_in_4bit=True,
+            # load_in_4bit=True,
             quantization_config=BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_compute_dtype=torch.bfloat16,
@@ -486,24 +501,25 @@ def train():
 
         model.save_pretrained(training_args.output_dir)
 
-    # then merge and testing
+        ckpt_path = trainer.state.best_model_checkpoint
+
     if extra_args.merge:
         merge_lora_to_base_model(
             modeling_cls,
             cfg_cls,
             model_args.model_name_or_path,
             training_args.output_dir,
-            extra_args.merge_path,
+            ckpt_path,
             extra_args,
         )
         if extra_args.test:
             test_loading(
-                extra_args.merge_path,
+                extra_args.output_dir,
             )
 
-    if extra_args.do_eval:
-        # TODO: add eval code here
-        pass
+    # if extra_args.do_eval:
+    # TODO: add eval code here
+    # pass
 
 
 if __name__ == "__main__":

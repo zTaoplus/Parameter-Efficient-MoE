@@ -8,7 +8,9 @@
 </a>
 
 ## TODOLIST
-- [ ] ADD dataset preprocess scripts
+- [ ] Add dataset preprocessing scripts
+- [ ] Move some constant variables to a constants file
+- [ ] Try to generate more files for other models
   
 ## News
 - 3/12/2024 - We released Qwen2idae-16x14B-v1.0 on 🤗 [HuggingFace](https://huggingface.co/hywu/Qwen2idae-16x14B-v1.0), which has strong performance in Math and Code with 15B activated params.
