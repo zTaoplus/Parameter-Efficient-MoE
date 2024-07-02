@@ -37,14 +37,16 @@ from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 import utils
 from merge_moe_lora_utils import merge_lora_to_base_model, test_loading
 from transformers_utils import (
-    _load_pretrained_model,
+    # _load_pretrained_model,
     get_keys_to_not_convert,
 )
 
 transformers.integrations.get_keys_to_not_convert = get_keys_to_not_convert
-transformers.modeling_utils.PreTrainedModel._load_pretrained_model = (
-    _load_pretrained_model
-)
+
+# do not patched it
+# transformers.modeling_utils.PreTrainedModel._load_pretrained_model = (
+#     _load_pretrained_model
+# )
 
 warnings.filterwarnings("ignore")
 
@@ -94,15 +96,21 @@ class ExtraArguments:
     )
     num_experts: int = field(default=8, metadata={"help": "Number of experts"})
     moe_scaling: float = field(default=1.0, metadata={"help": "Scaling factor for MoE"})
+    moe_dtype: str = field(default="bfloat16", metadata={"help": "moe model dtype"})
     lora_r: int = field(default=64, metadata={"help": "lora_r"})
     lora_alpha: int = field(default=16, metadata={"help": "lora_alpha"})
     adapter_dim: int = field(default=512, metadata={"help": "adapter_dim"})
     topk: int = field(default=2, metadata={"help": "TopK of  gate router"})
-    seed: int = field(default=42, metadata={"help": "set_seed"})
+    # conflict hf args?
+    # seed: int = field(default=42, metadata={"help": "set_seed"})
+    output_router_logits: bool = field(
+        default=False, metadata={"help": "output_router_logits"}
+    )
     merge: bool = field(default=False, metadata={"help": "Merge moe and lora"})
     test: bool = field(
         default=False, metadata={"help": "test merged moe model loading and generating"}
     )
+    do_eval: bool = field(default=False, metadata={"help": "do eval by lm eval repo"})
 
 
 def _tokenize_fn(
@@ -352,7 +360,7 @@ def train():
     extra_args: ExtraArguments
 
     training_args.ddp_find_unused_parameters = False
-    set_seed(extra_args.seed)
+    set_seed(42)
 
     cfg_module, cfg = extra_args.config_class.rsplit(".", maxsplit=1)
 
@@ -377,7 +385,7 @@ def train():
     #     "factor": 2,
     # }
 
-    modeling_module, modeling = extra_args.config_class.rsplit(".", maxsplit=1)
+    modeling_module, modeling = extra_args.modeling_class.rsplit(".", maxsplit=1)
 
     modeling_cls = getattr(importlib.import_module(modeling_module), modeling)
 
