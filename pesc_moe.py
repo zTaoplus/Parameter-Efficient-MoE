@@ -83,6 +83,8 @@ class TrainingArguments(transformers.TrainingArguments):
         },
     )
 
+    skip_train: bool = field(default=False, metadata={"help": "skip training"})
+
 
 @dataclass
 class ExtraArguments:
@@ -388,106 +390,108 @@ def train():
     modeling_module, modeling = extra_args.modeling_class.rsplit(".", maxsplit=1)
 
     modeling_cls = getattr(importlib.import_module(modeling_module), modeling)
-
-    model = modeling_cls.from_pretrained(
-        model_args.model_name_or_path,
-        config=model_config,
-        cache_dir=training_args.cache_dir,
-        load_in_4bit=True,
-        quantization_config=BitsAndBytesConfig(
+    if not training_args.skip_train:
+        model = modeling_cls.from_pretrained(
+            model_args.model_name_or_path,
+            config=model_config,
+            cache_dir=training_args.cache_dir,
             load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-        ),
-        output_loading_info=False,
-    )
-    model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
-    model.gradient_checkpointing_enable()
-
-    # lora_modules = find_all_linear_names(model)
-    lora_modules = [
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-        "up_proj",
-        "gate_proj",
-        "down_proj",
-    ]
-    config = LoraConfig(
-        r=model_config.lora_r,
-        lora_alpha=model_config.lora_alpha,
-        target_modules=lora_modules,
-        lora_dropout=0.1,
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
-    model = get_peft_model(model, config)
-
-    # Zero Init
-    for n, p in model.named_parameters():
-        if "adapter_up" in n:
-            nn.init.zeros_(p)
-        if "adapter_down" in n:
-            nn.init.kaiming_uniform_(p, a=math.sqrt(5))
-        if "router" in n:
-            nn.init.kaiming_uniform_(p, a=math.sqrt(5))
-
-    for name, module in model.named_modules():
-        if isinstance(module, LoraLayer):
-            if training_args.bf16:
-                module = module.to(torch.bfloat16)
-        if "norm" in name:
-            module = module.to(torch.float32)
-        if "lm_head" in name or "embed_tokens" in name:
-            if hasattr(module, "weight"):
-                if training_args.bf16 and module.weight.dtype == torch.float32:
-                    module = module.to(torch.bfloat16)
-        if "adapter" in name:
-            if training_args.bf16:
-                module = module.to(torch.bfloat16)
-            else:
-                module = module.to(torch.float32)
-
-    for n, p in model.named_parameters():
-        if "adapter" in n:
-            p.requires_grad = True
-        # if "norm" in n:
-        #     p.requires_grad = True
-
-    model.config.use_cache = False
-    print_trainable_parameters(model)
-
-    tokenizer = transformers.AutoTokenizer.from_pretrained(
-        model_args.model_name_or_path,
-        cache_dir=training_args.cache_dir,
-        model_max_length=training_args.model_max_length,
-        padding_side="right",
-        use_fast=False,
-        trust_remote_code=True,
-    )
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token_id = (
-            0  # unk. we want this to be different from the eos token
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            ),
+            output_loading_info=False,
         )
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+        model.gradient_checkpointing_enable()
 
-    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
-    trainer = Trainer(
-        model=model, tokenizer=tokenizer, args=training_args, **data_module
-    )
-    trainer.add_callback(SavePeftModelCallback)
+        # lora_modules = find_all_linear_names(model)
+        lora_modules = [
+            "q_proj",
+            "k_proj",
+            "v_proj",
+            "o_proj",
+            "up_proj",
+            "gate_proj",
+            "down_proj",
+        ]
+        config = LoraConfig(
+            r=model_config.lora_r,
+            lora_alpha=model_config.lora_alpha,
+            target_modules=lora_modules,
+            lora_dropout=0.1,
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(model, config)
 
-    trainer.train()
+        # Zero Init
+        for n, p in model.named_parameters():
+            if "adapter_up" in n:
+                nn.init.zeros_(p)
+            if "adapter_down" in n:
+                nn.init.kaiming_uniform_(p, a=math.sqrt(5))
+            if "router" in n:
+                nn.init.kaiming_uniform_(p, a=math.sqrt(5))
 
-    model.save_pretrained(training_args.output_dir)
+        for name, module in model.named_modules():
+            if isinstance(module, LoraLayer):
+                if training_args.bf16:
+                    module = module.to(torch.bfloat16)
+            if "norm" in name:
+                module = module.to(torch.float32)
+            if "lm_head" in name or "embed_tokens" in name:
+                if hasattr(module, "weight"):
+                    if training_args.bf16 and module.weight.dtype == torch.float32:
+                        module = module.to(torch.bfloat16)
+            if "adapter" in name:
+                if training_args.bf16:
+                    module = module.to(torch.bfloat16)
+                else:
+                    module = module.to(torch.float32)
+
+        for n, p in model.named_parameters():
+            if "adapter" in n:
+                p.requires_grad = True
+            # if "norm" in n:
+            #     p.requires_grad = True
+
+        model.config.use_cache = False
+        print_trainable_parameters(model)
+
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+            model_max_length=training_args.model_max_length,
+            padding_side="right",
+            use_fast=False,
+            trust_remote_code=True,
+        )
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token_id = (
+                0  # unk. we want this to be different from the eos token
+            )
+
+        data_module = make_supervised_data_module(
+            tokenizer=tokenizer, data_args=data_args
+        )
+        trainer = Trainer(
+            model=model, tokenizer=tokenizer, args=training_args, **data_module
+        )
+        trainer.add_callback(SavePeftModelCallback)
+
+        trainer.train()
+
+        model.save_pretrained(training_args.output_dir)
 
     # then merge and testing
     if extra_args.merge:
         merge_lora_to_base_model(
             modeling_cls,
             cfg_cls,
-            training_args.model_name_or_path,
+            model_args.model_name_or_path,
             training_args.output_dir,
             extra_args.merge_path,
             extra_args,
@@ -497,7 +501,7 @@ def train():
                 extra_args.merge_path,
             )
 
-    if extra_args.eval:
+    if extra_args.do_eval:
         # TODO: add eval code here
         pass
 
