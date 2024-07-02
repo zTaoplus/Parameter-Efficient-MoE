@@ -11,48 +11,42 @@
 #    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
-import os
-from os.path import join
-import importlib
-import gc
-import math
 import copy
+import gc
+import importlib
 import logging
+import math
+import os
+import warnings
 from dataclasses import dataclass, field
+from os.path import join
 from typing import Dict, Optional, Sequence
 
-import torch
-from torch import nn
-from torch.utils.data import Dataset
-import utils
 import bitsandbytes as bnb
-
+import torch
 import transformers
-from transformers import Trainer, BitsAndBytesConfig, set_seed
-from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
-
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from peft.tuners.lora import LoraLayer
-
-
-import warnings
-
-warnings.filterwarnings("ignore")
-
-from transformers_utils import (
-    get_keys_to_not_convert,
-    _load_pretrained_model,
-)
 import transformers.integrations
 import transformers.modeling_utils
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft.tuners.lora import LoraLayer
+from torch import nn
+from torch.utils.data import Dataset
+from transformers import BitsAndBytesConfig, Trainer, set_seed
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
-
+import utils
 from merge_moe_lora_utils import merge_lora_to_base_model, test_loading
+from transformers_utils import (
+    _load_pretrained_model,
+    get_keys_to_not_convert,
+)
 
 transformers.integrations.get_keys_to_not_convert = get_keys_to_not_convert
 transformers.modeling_utils.PreTrainedModel._load_pretrained_model = (
     _load_pretrained_model
 )
+
+warnings.filterwarnings("ignore")
 
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
@@ -86,6 +80,7 @@ class TrainingArguments(transformers.TrainingArguments):
             "help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."
         },
     )
+
 
 @dataclass
 class ExtraArguments:
@@ -490,10 +485,14 @@ def train():
             extra_args,
         )
         if extra_args.test:
-            test_loading(extra_args.merge_path,)
+            test_loading(
+                extra_args.merge_path,
+            )
+
+    if extra_args.eval:
+        # TODO: add eval code here
+        pass
 
 
-    # TODO: add lm eval?  see https://github.com/EleutherAI/lm-evaluation-harness
-    
 if __name__ == "__main__":
     train()

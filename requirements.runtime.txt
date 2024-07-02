@@ -3,3 +3,4 @@ torch
 bitsandbytes
 peft
 accelerate
+-e ./LM-Evaluation-Harness-240702
