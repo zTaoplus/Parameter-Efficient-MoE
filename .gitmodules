@@ -1,0 +1,3 @@
+[submodule "LM-Evaluation-Harness-240702"]
+	path = LM-Evaluation-Harness-240702
+	url = https://github.com/zTaoplus/lm-evaluation-harness
